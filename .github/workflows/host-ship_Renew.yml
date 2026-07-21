@@ -2,7 +2,7 @@ name: Host-Ship 续期
 
 on:
   schedule:
-    - cron: '0 0,11,22 * * *'    # 每天触发点
+    - cron: '0 0 * * 0'    # 每周日 00:00 (UTC时间) 触发一次，即每 7 天运行一次
   workflow_dispatch:
 
 permissions:
