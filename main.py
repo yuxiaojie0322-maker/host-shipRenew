@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Host-Ship 自动续订脚本 - DrissionPage 版本
-支持多服务器自动遍历续签，失败/成功推送截图至 Telegram
+支持多服务器自动遍历续签、冷却时间 (CD) 自动检测等待与重试、失败/成功推送截图至 Telegram
 """
 
 import os
 import sys
 import time
+import re
 import requests
 from xvfbwrapper import Xvfb
 from DrissionPage import ChromiumPage, ChromiumOptions
@@ -59,7 +60,7 @@ def main():
     screenshot_dir = "output/screenshots"
     os.makedirs(screenshot_dir, exist_ok=True)
 
-    # 启动虚拟显示屏 (GitHub Actions 需要)
+    # 启动虚拟显示屏 (GitHub Actions 环境需要)
     vdisplay = Xvfb(width=1920, height=1080, colordepth=24)
     vdisplay.start()
 
@@ -70,7 +71,7 @@ def main():
         co.set_argument('--no-sandbox')
         co.set_argument('--disable-dev-shm-usage')
         co.set_argument('--window-size=1920,1080')
-        co.headless(False)  # 在 Xvfb 下可以为 False 模拟真实渲染
+        co.headless(False)  # 在 Xvfb 下可为 False 模拟真实界面渲染
         page = ChromiumPage(co)
 
         # ---------------------------------------------------------
@@ -123,7 +124,7 @@ def main():
             page.get(panel_url)
             time.sleep(4)
 
-            # 重新抓取元素列表防止页面重载后 DOM 元素失效 (StaleElementReference)
+            # 重新抓取元素列表防止 DOM 元素失效 (StaleElementReference)
             current_btns = [el for el in page.eles('tag:button') + page.eles('tag:a') if el.text and 'manage server' in el.text.lower()]
             
             if i >= len(current_btns):
@@ -169,11 +170,37 @@ def main():
             except Exception:
                 renew_now_btn.click(by_js=True)
 
+            time.sleep(2) # 给页面反应和渲染警告框的时间
+
+            # ---------------------------------------------------------
+            # 检测是否触发 CD 频率限制 (如 "You can renew again in XX seconds.")
+            # ---------------------------------------------------------
+            alert_el = page.ele('text:You can renew again in')
+            if alert_el:
+                alert_text = alert_el.text
+                match = re.search(r'(\d+)\s*seconds', alert_text, re.IGNORECASE)
+                wait_time = int(match.group(1)) + 3 if match else 50 # 提取秒数并多加 3 秒缓冲
+                log(f"⚠️ 触发面板 CD 限制: [{alert_text}]，等待 {wait_time} 秒后自动重试...", "WARN")
+                time.sleep(wait_time)
+
+                # 重新点击续期确认按钮
+                log("CD 结束，再次尝试点击 Renew now...")
+                try:
+                    renew_now_btn.click()
+                except Exception:
+                    renew_now_btn.click(by_js=True)
+                time.sleep(3)
+
             log(f"✅ {server_name} 点击续期完成，进行截图备份")
             time.sleep(4)
             shot = page.get_screenshot(path=f"{screenshot_dir}/{server_name}_success.png")
             send_tg_photo(tg_token, tg_chat_id, shot, f"✅ Host-Ship 续订成功\n\n目标：{server_name}\n面板：panel.host-ship.com")
             total_success += 1
+
+            # 如果同一账号下还有后续服务器，主程序等待 60 秒防止触发下一个 CD
+            if i < server_count - 1:
+                log("等待 60 秒后开始处理同一账号下的下一个服务器...")
+                time.sleep(60)
 
         log(f"任务执行完毕，成功处理 {total_success}/{server_count} 个服务器")
 
