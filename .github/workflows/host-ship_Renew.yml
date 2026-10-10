@@ -45,6 +45,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PANEL_USER: ${{ secrets.PANEL_USER }}
           PANEL_PASS: ${{ secrets.PANEL_PASS }}
+          PANEL_COOKIE: ${{ secrets.PANEL_COOKIE || vars.PANEL_COOKIE }}
           PROXY_NODE: ${{ secrets.PROXY_NODE || vars.PROXY_NODE || secrets.NODE_LINK || vars.NODE_LINK || secrets.SINGBOX_CONFIG || vars.SINGBOX_CONFIG }}
         run: python -u private-scripts/host-ship/main.py
 
